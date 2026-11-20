@@ -5,7 +5,7 @@ Registers a Caddy app (`sqlite_leases`) and HTTP middleware (`sqlite_lease`).
 ## Build
 
 ```sh
-xcaddy build --with github.com/avalitan/caddy-sqlite-leases=/path/to/caddy-sqlite-leases
+xcaddy build --with github.com/avalitan/caddy-sqlite-leases
 ```
 
 This is a **local source module**, not a published GitHub repository. The module path is a placeholder for the intended repository. Requires Go dependencies to be downloaded on a machine with internet access.
