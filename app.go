@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -126,7 +127,9 @@ func (a *App) cleanupLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = a.cleanupExpired(ctx) // failures are retried next interval
+			if err := a.cleanupExpired(ctx); err != nil {
+				log.Printf("sqlite_leases: cleanup failed (will retry): %v", err)
+			}
 		}
 	}
 }
