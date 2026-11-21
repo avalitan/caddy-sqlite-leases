@@ -1,4 +1,4 @@
-# Caddy SQLite leases — initial module scaffold
+# Caddy SQLite leases
 
 Registers a Caddy app (`sqlite_leases`) and HTTP middleware (`sqlite_lease`).
 
@@ -30,17 +30,43 @@ This is a **local source module**, not a published GitHub repository. The module
 
 `cleanup_interval: "0s"` disables cleanup. If omitted, the default is 10 minutes. The default TTL is 24 hours.
 
-## Registration middleware
+## Registration success handler
 
-Place this handler **before** the existing `/init` registration logic in the Caddy route's handler chain:
+`sqlite_lease` is a **pre-response action**, not a wrapper around the entire
+registration request. It renews the SQLite lease **before** handing control to
+the next handler. It requires a verified TLS client certificate, uses its CN and
+URI SANs, and derives the outer route ID as `site_auth_<CN>` or `l4_auth_<CN>`.
+
+**Do not place it at the beginning of `/init` or `/init4`.** It would renew a
+lease even if the Admin API subsequently rejected registration.
+
+Instead, add the handler at the start of **each successful Admin API
+`reverse_proxy.handle_response` branch**, immediately before the existing
+`static_response` handler:
 
 ```json
-{ "handler": "sqlite_lease", "kind": "l7" }
+"handle": [
+  { "handler": "sqlite_lease", "kind": "l7" },
+  {
+    "handler": "static_response",
+    "status_code": 200,
+    "headers": { "Content-Type": ["application/json"] },
+    "body": "{\"status\":\"initialized\"}"
+  }
+]
 ```
 
-Use `"kind": "l4"` on `/init4`. The handler wraps the downstream registration flow, checks for an authenticated TLS client certificate, and renews the SQLite lease **only if the downstream handler returns HTTP 200**. It uses the certificate's CN and URI SANs, not untrusted client input. It derives the allowed outer route ID as `site_auth_<CN>` or `l4_auth_<CN>`.
+Do this for **both** `initialized` (new route: Admin API 200) and
+`already_initialized` (confirmed existing outer and nested route: Admin API
+200) success responses. Use `"kind": "l4"` in the two equivalent `/init4`
+branches. Leave all failure responses and `/status` unchanged.
 
-**Important integration requirement:** Both a new registration and the existing `already_initialized` path must finish with HTTP 200; the middleware doesn't independently verify the Caddy route exists. Place it only on the registration routes, not `/status` or generic Admin API proxy paths.
+If SQLite renewal fails, the handler returns HTTP 503 without executing the
+success response. Unlike the previous buffered-response implementation, this
+handler does not intercept or buffer reverse proxy responses. Registration and
+lease renewal are not transactional: a failed DB write after a successful route
+creation can leave an untracked route; retrying `/init` renews the lease via
+the `already_initialized` success branch.
 
 ## SQLite
 
